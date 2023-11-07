@@ -17,6 +17,7 @@ import javax.management.MBeanServerConnection;
 import javax.management.MBeanServerFactory;
 import javax.management.ObjectInstance;
 import javax.management.remote.JMXConnector;
+import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXConnectorServer;
 import javax.management.remote.JMXConnectorServerFactory;
 import javax.management.remote.JMXServiceURL;
@@ -32,7 +33,7 @@ public class CustomMBeanServer {
 	private int jmxConnectorServerPort;
 	private String context = "custom";
 	
-	private MBeanServer mbeanServer = MBeanServerFactory.createMBeanServer("com.sbs.Custom");
+	private MBeanServer mbeanServer = MBeanServerFactory.createMBeanServer("custom");
 	private Registry registry;
 	private JMXConnectorServer connectorServer;
 	
@@ -121,12 +122,12 @@ public class CustomMBeanServer {
 	
 	public static void main(String[] args) throws Exception {
 		 // Set the system property to prefer IPv4 over IPv6
-	    System.setProperty("java.net.preferIPv4Stack", "true");
+	    System.setProperty( "java.net.preferIPv4Stack", "true" );
 	    
 		CustomMBeanServer server = new CustomMBeanServer( InetAddress.getLoopbackAddress(), 7771, 7772 );
 		server.start();
 		
-		JMXConnector connector = new RMIConnector( server.getJMXServiceURL(), null );
+		JMXConnector connector = JMXConnectorFactory.connect( server.getJMXServiceURL() );
 		MBeanServerConnection serverConnection = connector.getMBeanServerConnection();
 		Set<ObjectInstance> beans = serverConnection.queryMBeans(null, null);
 		beans.forEach( (bean) -> System.out.println( bean ) );
