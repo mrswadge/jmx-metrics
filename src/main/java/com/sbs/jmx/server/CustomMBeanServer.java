@@ -123,7 +123,7 @@ public class CustomMBeanServer {
 		 // Set the system property to prefer IPv4 over IPv6
 	    System.setProperty("java.net.preferIPv4Stack", "true");
 	    
-		CustomMBeanServer server = new CustomMBeanServer( InetAddress.getLocalHost(), 7771, 7772 );
+		CustomMBeanServer server = new CustomMBeanServer( InetAddress.getLoopbackAddress(), 7771, 7772 );
 		server.start();
 		
 		JMXConnector connector = new RMIConnector( server.getJMXServiceURL(), null );
