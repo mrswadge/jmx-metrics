@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.ServerSocket;
+import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.RMIServerSocketFactory;
@@ -80,22 +81,28 @@ public class CustomMBeanServer {
 	
 	public void start() {
 		try {
-			RMIServerSocketFactory locateRegistrySocketFactory = port -> new ServerSocket( CustomMBeanServer.this.locateRegistryPort, 50, CustomMBeanServer.this.host );
-			RMIServerSocketFactory jmxConnectorSocketFactory = port -> new ServerSocket( CustomMBeanServer.this.jmxConnectorServerPort, 50, CustomMBeanServer.this.host );
-
-			this.registry = LocateRegistry.createRegistry( locateRegistryPort, null, locateRegistrySocketFactory );
-			
-			JMXServiceURL url = getJMXServiceURL();
-
-			Map<String, Object> environment = new HashMap<>();
-			environment.put( RMIConnectorServer.RMI_SERVER_SOCKET_FACTORY_ATTRIBUTE, jmxConnectorSocketFactory );
-			
-			this.connectorServer = JMXConnectorServerFactory.newJMXConnectorServer( url, environment, mbeanServer );
-	        this.connectorServer.start();
+			startLocateRegistry();
+			startJMXConnectorServer();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw new CustomMBeanServerRuntimeException( "Could not start JMX Connector Server.", e );
 		}
+	}
+	
+	private void startLocateRegistry() throws RemoteException {
+		RMIServerSocketFactory locateRegistrySocketFactory = port -> new ServerSocket( CustomMBeanServer.this.locateRegistryPort, 50, CustomMBeanServer.this.host );
+		this.registry = LocateRegistry.createRegistry( locateRegistryPort, null, locateRegistrySocketFactory );
+	}
+
+	private void startJMXConnectorServer() throws IOException {
+		RMIServerSocketFactory jmxConnectorSocketFactory = port -> new ServerSocket( CustomMBeanServer.this.jmxConnectorServerPort, 50, CustomMBeanServer.this.host );
+
+		JMXServiceURL url = getJMXServiceURL();
+
+		Map<String, Object> environment = new HashMap<>();
+		environment.put( RMIConnectorServer.RMI_SERVER_SOCKET_FACTORY_ATTRIBUTE, jmxConnectorSocketFactory );
+		
+		this.connectorServer = JMXConnectorServerFactory.newJMXConnectorServer( url, environment, mbeanServer );
+		this.connectorServer.start();
 	}
 	
 	public Registry getRegistry() {
