@@ -1,0 +1,8 @@
+<suite name="jmx-metrics">
+    <test name="jmx-metrics">
+        <classes>
+            <class name="com.sbs.jmx.server.StartJMXServer"/>
+            <class name="com.sbs.jmx.metrics.MetricsTest"/>
+        </classes>
+    </test>
+</suite>

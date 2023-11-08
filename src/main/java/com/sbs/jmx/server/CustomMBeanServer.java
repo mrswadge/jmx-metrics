@@ -13,6 +13,7 @@ import javax.management.MBeanServer;
 import javax.management.MBeanServerConnection;
 import javax.management.MBeanServerFactory;
 import javax.management.ObjectInstance;
+import javax.management.ObjectName;
 import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXConnectorServer;
@@ -41,27 +42,74 @@ public class CustomMBeanServer {
 	private String context = "sbs";
 	private String domain = CustomMBeanServer.class.getName();
 	
-	public CustomMBeanServer() {
+	private boolean started = false;
+	
+	private static final CustomMBeanServer instance = new CustomMBeanServer();
+	
+	private CustomMBeanServer() {
+	}
+	
+	public static CustomMBeanServer getInstance() {
+		return instance;
+	}
+	
+	public boolean isStarted() {
+		return started;
 	}
 	
 	public void setContext(String context) {
+		if ( isStarted() ) {
+			throw new CustomMBeanServerRuntimeException( "Context cannot be changed as the server has already started." );
+		}
 		this.context = context;
 	}
 	
+	public String getContext() {
+		return context;
+	}
+	
 	public void setDomain(String domain) {
+		if ( isStarted() ) {
+			throw new CustomMBeanServerRuntimeException( "Domain cannot be changed as the server has already started." );
+		}
 		this.domain = domain;
 	}
 	
+	public String getDomain() {
+		return domain;
+	}
+	
 	public void setHost(String host) {
+		if ( isStarted() ) {
+			throw new CustomMBeanServerRuntimeException( "Host cannot be changed as the server has already started." );
+		}
 		this.host = host;
 	}
 	
+	public String getHost() {
+		return host;
+	}
+	
 	public void setConnectorServerPort(int connectorServerPort) {
+		if ( isStarted() ) {
+			throw new CustomMBeanServerRuntimeException( "Connector server port cannot be changed as the server has already started." );
+		}
 		this.connectorServerPort = connectorServerPort;
 	}
 	
+	public int getConnectorServerPort() {
+		return connectorServerPort;
+	}
+	
 	public void setLocateRegistryPort(int locateRegistryPort) {
+		if ( isStarted() ) {
+			throw new CustomMBeanServerRuntimeException( "Locate registry port cannot be changed as the server has already started." );
+		}
 		this.locateRegistryPort = locateRegistryPort;
+	}
+	
+	public int getLocateRegistryPort() {
+		return locateRegistryPort;
 	}
 
 	private String normalizeAddress( String host, int port ) {
@@ -94,6 +142,7 @@ public class CustomMBeanServer {
 			this.mbeanServer = createMBeanServer();
 			this.registry = createLocateRegistry();
 			this.server = createJMXConnectorServer();
+			this.started = true;
 		} catch (IOException | InvalidCustomMBeanServerConfigurationException e) {
 			throw new CustomMBeanServerRuntimeException( "Could not start JMX Connector Server.", e );
 		}
@@ -161,10 +210,26 @@ public class CustomMBeanServer {
 		return server;
 	}
 	
+	public void listMBeans() {
+		if ( mbeanServer == null ) {
+			throw new CustomMBeanServerRuntimeException( "MBeanServer is not started." );
+		}
+		Set<ObjectInstance> beans = mbeanServer.queryMBeans( null, null );
+		beans.forEach( (bean) -> logger.info( "MBean: " + bean ) );
+	}
+	
+	public void listObjectNames() {
+		if ( mbeanServer == null ) {
+			throw new CustomMBeanServerRuntimeException( "MBeanServer is not started." );
+		}
+		Set<ObjectName> names = mbeanServer.queryNames( null, null );
+		names.forEach( (name) -> logger.info( "ObjectName: " + name ) );	
+	}
+	
 	public static void main(String[] args) throws Exception {
 		 // Set the system property to prefer IPv4 over IPv6
 	    System.setProperty( "java.net.preferIPv4Stack", "true" );
-		CustomMBeanServer server = new CustomMBeanServer();
+		CustomMBeanServer server = CustomMBeanServer.getInstance();
 		server.setHost( null );
 		server.setConnectorServerPort( 7771 );
 		server.setLocateRegistryPort( 7772 );
