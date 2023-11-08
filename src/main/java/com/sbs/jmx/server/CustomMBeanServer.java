@@ -1,15 +1,12 @@
 package com.sbs.jmx.server;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.MalformedURLException;
-import java.net.ServerSocket;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
-import java.rmi.server.RMIServerSocketFactory;
-import java.util.HashMap;
-import java.util.Map;
+import java.rmi.server.RMISocketFactory;
+import java.util.Hashtable;
 import java.util.Set;
 
 import javax.management.MBeanServer;
@@ -21,43 +18,58 @@ import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXConnectorServer;
 import javax.management.remote.JMXConnectorServerFactory;
 import javax.management.remote.JMXServiceURL;
-import javax.management.remote.rmi.RMIConnector;
 import javax.management.remote.rmi.RMIConnectorServer;
+
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.sbs.jmx.server.exceptions.CustomMBeanServerRuntimeException;
 import com.sbs.jmx.server.exceptions.InvalidCustomMBeanServerConfigurationException;
 
 public class CustomMBeanServer {
-	private InetAddress host;
-	private int locateRegistryPort;
-	private int jmxConnectorServerPort;
-	private String context = "custom";
 	
-	private MBeanServer mbeanServer = MBeanServerFactory.createMBeanServer("custom");
+	private static final Logger logger = LoggerFactory.getLogger( CustomMBeanServer.class );
+	
+	private MBeanServer mbeanServer;
 	private Registry registry;
-	private JMXConnectorServer connectorServer;
-	
-	public CustomMBeanServer( InetAddress host, int locateRegistryPort, int jmxConnectorServerPort ) throws InvalidCustomMBeanServerConfigurationException {
-		if ( locateRegistryPort == jmxConnectorServerPort || locateRegistryPort < 0 || jmxConnectorServerPort < 0 ) {
-			throw new InvalidCustomMBeanServerConfigurationException( "Provided ports collide." );
-		}
+	private JMXConnectorServer server;
 
-		this.host = host;
-		this.locateRegistryPort = locateRegistryPort;
-		this.jmxConnectorServerPort = jmxConnectorServerPort;
+	private String host;
+	private int connectorServerPort = 7114;
+	private int locateRegistryPort = 7115;
+	private String context = "sbs";
+	private String domain = CustomMBeanServer.class.getName();
+	
+	public CustomMBeanServer() {
 	}
 	
-	public CustomMBeanServer( InetAddress host, int locateRegistryPort, int jmxConnectorServerPort, String context ) throws InvalidCustomMBeanServerConfigurationException {
-		this( host, locateRegistryPort, jmxConnectorServerPort );
-		if ( context == null || context.length() == 0 ) {
-			throw new InvalidCustomMBeanServerConfigurationException( "The provided context was null or empty." );
-		} 
+	public void setContext(String context) {
 		this.context = context;
 	}
 	
-	private String normalizeAddress( InetAddress host, int port ) {
+	public void setDomain(String domain) {
+		this.domain = domain;
+	}
+	
+	public void setHost(String host) {
+		this.host = host;
+	}
+	
+	public void setConnectorServerPort(int connectorServerPort) {
+		this.connectorServerPort = connectorServerPort;
+	}
+	
+	public void setLocateRegistryPort(int locateRegistryPort) {
+		this.locateRegistryPort = locateRegistryPort;
+	}
+
+	private String normalizeAddress( String host, int port ) {
 		StringBuilder sb = new StringBuilder();
-		sb.append( host.getHostName() );
+		if ( StringUtils.isBlank( host ) ) {
+			host = "localhost";
+		}
+		sb.append( host );
 		if ( port > 0 ) {
 			sb.append( ':' );
 			sb.append( port );
@@ -65,14 +77,10 @@ public class CustomMBeanServer {
 		return sb.toString();
 	}
 	
-	public String getServerUrl() {
-		String locate = normalizeAddress( host, locateRegistryPort );
-		String connector = normalizeAddress( host, jmxConnectorServerPort );
-		return String.format( "service:jmx:rmi://%s/jndi/rmi://%s/%s", locate, connector, context );
-	}
-	
 	public JMXServiceURL getJMXServiceURL() {
-		String url = getServerUrl();
+		String locateAddr = normalizeAddress( host, locateRegistryPort );
+		String connectorAddr = normalizeAddress( host, connectorServerPort );
+		String url = String.format( "service:jmx:rmi://%s/jndi/rmi://%s/%s", connectorAddr, locateAddr, context );
 		try {
 			return new JMXServiceURL( url );
 		} catch (MalformedURLException e) {
@@ -82,49 +90,86 @@ public class CustomMBeanServer {
 	
 	public void start() {
 		try {
-			startLocateRegistry();
-			startJMXConnectorServer();
-		} catch (IOException e) {
+			validate();
+			this.mbeanServer = createMBeanServer();
+			this.registry = createLocateRegistry();
+			this.server = createJMXConnectorServer();
+		} catch (IOException | InvalidCustomMBeanServerConfigurationException e) {
 			throw new CustomMBeanServerRuntimeException( "Could not start JMX Connector Server.", e );
 		}
 	}
 	
-	private void startLocateRegistry() throws RemoteException {
-		RMIServerSocketFactory locateRegistrySocketFactory = port -> new ServerSocket( CustomMBeanServer.this.locateRegistryPort, 50, CustomMBeanServer.this.host );
-		this.registry = LocateRegistry.createRegistry( locateRegistryPort, null, locateRegistrySocketFactory );
+	private void validate() throws InvalidCustomMBeanServerConfigurationException {
+		if ( StringUtils.isBlank( domain ) ) {
+			throw new InvalidCustomMBeanServerConfigurationException( "MBeanServer domain cannot be blank." );
+		}
+		if ( locateRegistryPort == connectorServerPort || locateRegistryPort < 0 || connectorServerPort < 0 ) {
+			throw new InvalidCustomMBeanServerConfigurationException( "Provided ports are invalid." );
+		}
+		if ( StringUtils.isBlank( context ) ) {
+			throw new InvalidCustomMBeanServerConfigurationException( "The provided context was null or empty." );
+		} 
 	}
 
-	private void startJMXConnectorServer() throws IOException {
-		RMIServerSocketFactory jmxConnectorSocketFactory = port -> new ServerSocket( CustomMBeanServer.this.jmxConnectorServerPort, 50, CustomMBeanServer.this.host );
+	private MBeanServer createMBeanServer() {
+		return MBeanServerFactory.createMBeanServer( domain );
+	}
+	
+	private Registry createLocateRegistry() throws RemoteException {
+		RMISocketFactory csf = null;
+		RMISocketFactory ssf = new CustomRMISocketFactory( host, locateRegistryPort, 50 );
 
+		return LocateRegistry.createRegistry( locateRegistryPort, csf, ssf );
+	}
+
+	private JMXConnectorServer createJMXConnectorServer() throws IOException {
 		JMXServiceURL url = getJMXServiceURL();
-
-		Map<String, Object> environment = new HashMap<>();
-		environment.put( RMIConnectorServer.RMI_SERVER_SOCKET_FACTORY_ATTRIBUTE, jmxConnectorSocketFactory );
+		logger.info( String.format( "JMX: Server initialising: %s", String.valueOf( url ) ) );
 		
-		this.connectorServer = JMXConnectorServerFactory.newJMXConnectorServer( url, environment, mbeanServer );
-		this.connectorServer.start();
+		RMISocketFactory ssf = new CustomRMISocketFactory( host, connectorServerPort, 50 );
+
+		Hashtable<String, Object> env = new Hashtable<>();
+		env.put( RMIConnectorServer.RMI_SERVER_SOCKET_FACTORY_ATTRIBUTE, ssf );
+		
+		logger.info( String.format( "MBeanServer domain: %s", mbeanServer.getDefaultDomain() ) );
+		JMXConnectorServer connectorServer = JMXConnectorServerFactory.newJMXConnectorServer( url, env, mbeanServer );
+		connectorServer.start();
+		
+		logger.info( String.format( "JMX: Server started: %s", String.valueOf( connectorServer.getAddress() ) ) );
+		
+		return connectorServer;
+	}
+
+	public MBeanServer getMBeanServer() {
+		if ( mbeanServer == null ) {
+			throw new CustomMBeanServerRuntimeException( "MBeanServer is not started." );
+		}
+		return mbeanServer;
 	}
 	
 	public Registry getRegistry() {
 		if ( registry == null ) {
-			throw new CustomMBeanServerRuntimeException( "Locate Registry not started." );
+			throw new CustomMBeanServerRuntimeException( "Locate Registry is not started." );
 		}
 		return registry;
 	}
-	
-	public JMXConnectorServer getConnectorServer() {
-		if ( connectorServer == null ) {
-			throw new CustomMBeanServerRuntimeException( "JMX Connector Server not started." );
+
+	public JMXConnectorServer getServer() {
+		if ( server == null ) {
+			throw new CustomMBeanServerRuntimeException( "JMX Connector Server is not started." );
 		}
-		return connectorServer;
+		return server;
 	}
 	
 	public static void main(String[] args) throws Exception {
 		 // Set the system property to prefer IPv4 over IPv6
 	    System.setProperty( "java.net.preferIPv4Stack", "true" );
-	    
-		CustomMBeanServer server = new CustomMBeanServer( InetAddress.getLoopbackAddress(), 7771, 7772 );
+		CustomMBeanServer server = new CustomMBeanServer();
+		server.setHost( null );
+		server.setConnectorServerPort( 7771 );
+		server.setLocateRegistryPort( 7772 );
+		server.setContext( "github" );
+		server.setDomain( "com.github" );
 		server.start();
 		
 		JMXConnector connector = JMXConnectorFactory.connect( server.getJMXServiceURL() );
