@@ -25,8 +25,8 @@ public class StartJMXServer {
 	    System.setProperty( "java.net.preferIPv4Stack", "true" );
 	    server = CustomMBeanServer.getInstance();
 		server.setHost( null );
-		server.setConnectorServerPort( 7771 );
-		server.setLocateRegistryPort( 7772 );
+		server.setConnectorServerPort( 7115 );
+		server.setLocateRegistryPort( 7114 );
 		server.setContext( "github" );
 		server.setDomain( "com.github" );
 		server.start();

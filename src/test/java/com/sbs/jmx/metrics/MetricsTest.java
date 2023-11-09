@@ -2,20 +2,22 @@ package com.sbs.jmx.metrics;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 import com.codahale.metrics.Counter;
-import com.codahale.metrics.ExponentiallyDecayingReservoir;
-import com.codahale.metrics.Histogram;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.SharedMetricRegistries;
+import com.codahale.metrics.Timer;
+import com.codahale.metrics.Timer.Context;
 import com.codahale.metrics.jmx.JmxReporter;
 import com.codahale.metrics.jmx.ObjectNameFactory;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -23,6 +25,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Maps;
 import com.sbs.jmx.server.CustomMBeanServer;
+import com.sbs.jmx.server.exceptions.CustomMBeanServerRuntimeException;
 
 public class MetricsTest {
 
@@ -33,47 +36,36 @@ public class MetricsTest {
 	private MetricRegistry metricRegistry = SharedMetricRegistries.getOrCreate( MetricsTest.class.getName() );
 	private JmxReporter reporter;
 
-	class CustomObjectNameFactory implements ObjectNameFactory {
+	private static class CustomObjectNameFactory implements ObjectNameFactory {
 		private final ObjectMapper mapper = new ObjectMapper();
-		
-		private String escapeName( String s ) {
-			return s == null ? null : s.replaceAll("[,=:\"*?!&<>\\\\\\n\\r ]", "_");
-		}
-		
+
 		@Override
-		public ObjectName createName(String type, String domain, String name) {
-			String objectName = null;
-			try { 
-				@SuppressWarnings("unchecked")
+		public ObjectName createName( String type, String domain, String name ) {
+			try {
+				// Read the "name" variable as JSON. This is so we can set additional ObjectName attributes.
 				Map<String, String> attributes = mapper.readValue( name, Map.class );
-				attributes.put( "name", escapeName( attributes.getOrDefault( "name", "ERROR_NAME_NOT_SET" ) ) );
-		
-				StringBuilder builder = new StringBuilder();
 				
-				for (Map.Entry<String, String> entry : attributes.entrySet()) {
-					if (builder.length() > 0) {
-						builder.append( "," );
-					}
-					String key = entry.getKey();
-					String value = entry.getValue();
-					if ( "name".equals( key ) ) {
-						value = escapeName( value );
-					}
-					builder.append( key );
-					builder.append( "=" );
-					builder.append( value );
-				}
+				StringBuilder sb = new StringBuilder();
 				
-				objectName = String.format( "%s:%s", domain, builder.toString() );
-				return new ObjectName( objectName );
+				attributes.forEach( (k,v) -> {
+					if ( sb.length() > 0 ) {
+						sb.append(',');
+					}
+					sb.append(k);
+					sb.append('=');
+					sb.append(v);
+				});
+				sb.insert(0, ':');
+				sb.insert(0, domain);
+
+				return new ObjectName(sb.toString());
 			} catch ( MalformedObjectNameException e ) {
-				logger.error( String.format( "%s is not a valid ObjectName.", objectName ), e );
+				throw new CustomMBeanServerRuntimeException("Malformed Object Name", e);
 			} catch ( JsonMappingException e ) {
-				logger.error( String.format( "Unable to map object name attributes.", objectName ), e );
+				throw new CustomMBeanServerRuntimeException("Unable to map object name attributes.", e);
 			} catch ( JsonProcessingException e ) {
-				logger.error( String.format( "Unable to process object name attributes.", objectName ), e );
+				throw new CustomMBeanServerRuntimeException("Unable to process object name attributes.", e);
 			}
-			return null;
 		}
 	}
 	
@@ -91,36 +83,50 @@ public class MetricsTest {
 		reporter.start();
 	}
 	
-	@Test
-	public void recordMetrics() {
+	@Test( threadPoolSize = 50, invocationCount = 1000 )
+	public void recordMetrics() throws InterruptedException {
 		Counter counter = metricRegistry.counter( createKey( "recordMetrics", "counter", this.getClass().getSimpleName(), "recordMetrics" ), () -> new Counter() );
-		Histogram histogram = metricRegistry.histogram( createKey( "recordMetrics", "histogram", this.getClass().getSimpleName(), "recordMetrics" ), () -> new Histogram( new ExponentiallyDecayingReservoir() ) );
-		
+		Timer timer = metricRegistry.timer( createKey( "recordMetrics", "timer", this.getClass().getSimpleName(), "recordMetrics" ), () -> new Timer() );
+		Context timeContext = timer.time();
 		counter.inc();
-		counter.inc();
-		counter.dec();
-		counter.inc();
-		counter.dec();
-		counter.inc();
-		counter.dec();
-		counter.dec();
 
-		histogram.update( (long) (Math.random() * 10000d) );
-		
+		TimeUnit.MILLISECONDS.sleep( period(500) );
+	
+		counter.dec();
+		timeContext.stop();
+	}
+	
+	@AfterClass 
+	public void report() {
+		listMetrics();
+		listMBeans();
+	}
+	
+	public void listMetrics() {
 		metricRegistry.getMetrics().forEach( (key, metric) -> logger.info( "Key: " + key + ", Metric: " + metric ));
-		
+	}
+
+	public void listMBeans() {
 		server.listMBeans();
 		server.listObjectNames();
+	}
+	
+	private long period(double max) {
+		return Double.valueOf(Math.random() * max).longValue();
 	}
 
 	private ObjectMapper mapper = new ObjectMapper();
 
 	private String createKey( String name, String type, String classifier, String method ) {
 		LinkedHashMap<String, String> key = Maps.newLinkedHashMap();
+		key.put("type", "metrics");
+		key.put("integration", "external");
 		key.put("name", name);
-		key.put("type", type);
+		key.put("metric", type);
 		key.put("class", classifier);
 		key.put("method", method);
+		key.put("location", "webservice");
+		
 		try {
 			return mapper.writeValueAsString( key );
 		} catch (JsonProcessingException e) {
