@@ -15,15 +15,15 @@ import org.testng.annotations.BeforeSuite;
 import org.testng.annotations.Test;
 
 public class StartJMXServer {
-	
+
 	private static final Logger logger = LoggerFactory.getLogger( StartJMXServer.class );
-	
+
 	private CustomMBeanServer server;
-	
+
 	@BeforeSuite
 	public void startJMXServer() {
-	    System.setProperty( "java.net.preferIPv4Stack", "true" );
-	    server = CustomMBeanServer.getInstance();
+		System.setProperty( "java.net.preferIPv4Stack", "true" );
+		server = CustomMBeanServer.getInstance();
 		server.setHost( null );
 		server.setConnectorServerPort( 7115 );
 		server.setLocateRegistryPort( 7114 );
@@ -31,13 +31,13 @@ public class StartJMXServer {
 		server.setDomain( "com.github" );
 		server.start();
 	}
-	
+
 	@Test
 	public void queryMBeans() throws IOException {
 		JMXConnector connector = JMXConnectorFactory.connect( server.getJMXServiceURL() );
 		MBeanServerConnection serverConnection = connector.getMBeanServerConnection();
 		Set<ObjectInstance> beans = serverConnection.queryMBeans( null, null );
-		beans.forEach( (bean) -> logger.info( "MBean: " + bean ) );
+		beans.forEach( ( bean ) -> logger.info( "MBean: " + bean ) );
 	}
 
 	@Test
@@ -45,6 +45,6 @@ public class StartJMXServer {
 		JMXConnector connector = JMXConnectorFactory.connect( server.getJMXServiceURL() );
 		MBeanServerConnection serverConnection = connector.getMBeanServerConnection();
 		Set<ObjectName> names = serverConnection.queryNames( null, null );
-		names.forEach( (name) -> logger.info( "ObjectName: " + name ) );		
+		names.forEach( ( name ) -> logger.info( "ObjectName: " + name ) );
 	}
 }
